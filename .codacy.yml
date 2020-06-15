@@ -1,0 +1,10 @@
+---
+engines:
+ duplication:
+   exclude_paths:
+     - '**/*Tests.swift'
+exclude_paths:
+  - 'docs/**'
+  - 'fastlane/**'
+  - '.github/**'
+  - '*.md'

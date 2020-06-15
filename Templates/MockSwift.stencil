@@ -1,0 +1,153 @@
+import Foundation
+import MockSwift
+@testable import {{argument.module}}
+
+{% macro predicatesParameter method %}{% for param in method.parameters %}{% if param.argumentLabel == null %}_ {% elif param.argumentLabel != param.name %}{{ param.argumentLabel }} {% endif %}{{ param.name }}: Predicate<{{ param.unwrappedTypeName if param.typeAttributes.escaping else param.typeName }}>{{ ', ' if not forloop.last }}{% endfor %}{% endmacro %}
+
+{% macro normalizeParameter method %}{% for param in method.parameters %}{% if param.argumentLabel == null %}_ {% elif param.argumentLabel != param.name %}{{ param.argumentLabel }} {% endif %}{{ param.name }}: {% if param.typeName|contains:"->" %}@escaping {{ param.unwrappedTypeName }}{% else %}{{ param.typeName }}{% endif %}{{ ', ' if not forloop.last }}{% endfor %}{% endmacro %}
+
+{% macro parametersOnInvoke method %}{% for param in method.parameters %}{{ param.name }}{{ ', ' if not forloop.last }}{% endfor %}{% endmacro %}
+
+{% macro mockVariable variable %}
+  public var {{ variable.name }}: {{ variable.typeName }} {
+{% if variable.isMutable %}
+      get { mocked() }
+      set { mocked(newValue) }
+{% else %}
+    mocked()
+{% endif %}
+  }
+{% endmacro %}
+
+{% macro mockMethod method %}
+  public func {{ method.name }}{{ ' throws' if method.throws }}{% if not method.returnTypeName.isVoid %} -> {{ method.returnTypeName.name }}{% endif %} {
+  {% if method.throws %}
+    try mockedThrowable({% call parametersOnInvoke method %})
+  {% else %}
+    mocked({% call parametersOnInvoke method %})
+  {% endif %}
+  }
+{% endmacro %}
+
+{% macro mockSubscript subscript %}
+  public subscript({% for param in subscript.parameters %}{% if param.argumentLabel != null and param.argumentLabel != param.name %}{{ param.argumentLabel }} {% endif %}{{ param.name }}: {{ param.typeName }}{{ ', ' if not forloop.last }}{% endfor %}) -> {{ subscript.actualReturnTypeName }} {
+    get {
+      mocked({% call parametersOnInvoke subcript %})
+    }
+    {% if subscript.writeAccess != "" %}
+    set {
+      mocked({% call parametersOnInvoke subcript %}, newValue)
+    }
+    {% endif %}
+  }
+{% endmacro %}
+
+{% macro mock type %}
+extension Mock: {{ type.name }} where WrappedType == {{ type.name }} {
+  {% for variable in type.allVariables|!definedInExtension %}
+    {% call mockVariable variable %}
+  {% endfor %}
+  {% for method in type.allMethods|!definedInExtension %}
+    {% call mockMethod method %}
+  {% endfor %}
+  {% for method in type.allSubscripts|!definedInExtension %}
+    {% call mockSubscript method %}
+  {% endfor %}
+}
+{% endmacro %}
+
+{% macro normalizeReturnType type %}<{% if type|hasPrefix: "where " %}{{ type|replace:"where ","Void> where " }}{% elif type|contains:" where " %}{{ type|replace:" where ","> where " }}{% else %}{{ type }}>{% endif %}{% endmacro %}
+
+{% macro givenMockVariable variable %}
+  public var {{ variable.name }}: MockableProperty.{% if variable.isMutable %}Writable{% else %}Readable{% endif %}{% call normalizeReturnType variable.typeName %} {
+    mockable()
+  }
+{% endmacro %}
+
+{% macro givenMockMethod method %}
+  public func {{ method.shortName }}({% call predicatesParameter method %}) -> Mockable{% call normalizeReturnType method.returnTypeName %} {
+    mockable({% call parametersOnInvoke method %})
+  }
+  {% if method.parameters.count > 0 %}
+  public func {{ method.shortName }}({% call normalizeParameter method %}) -> Mockable{% call normalizeReturnType method.returnTypeName %} {
+    mockable({% call parametersOnInvoke method %})
+  }
+  {% endif %}
+{% endmacro %}
+
+{% macro givenMockSubscript subscript %}
+  public subscript({% for param in subscript.parameters %}{% if param.argumentLabel != null and param.argumentLabel != param.name %}{{ param.argumentLabel }} {% endif %}{{ param.name }}: Predicate<{{ param.unwrappedTypeName if param.typeAttributes.escaping else param.typeName }}>{{ ', ' if not forloop.last }}{% endfor %}) -> MockableSubscript.{% if subscript.writeAccess != "" %}Writable{% else %}Readable{% endif %}{% call normalizeReturnType subscript.actualReturnTypeName %} {
+    mockable({% call parametersOnInvoke method %})
+  }
+  {% if method.parameters.count > 0 %}
+  public subscript({% for param in subscript.parameters %}{% if param.argumentLabel != null and param.argumentLabel != param.name %}{{ param.argumentLabel }} {% endif %}{{ param.name }}: {{ param.typeName }}{{ ', ' if not forloop.last }}{% endfor %}) -> MockableSubscript.{% if subscript.writeAccess != "" %}Writable{% else %}Readable{% endif %}{% call normalizeReturnType subscript.actualReturnTypeName %} {
+   mockable({% call parametersOnInvoke subscript %})
+  }
+  {% endif %}
+{% endmacro %}
+
+{% macro given type %}
+extension Given where WrappedType == {{ type.name }} {
+  {% for variable in type.allVariables|!definedInExtension %}
+    {% call givenMockVariable variable %}
+  {% endfor %}
+  {% for method in type.allMethods|!definedInExtension %}
+    {% call givenMockMethod method %}
+  {% endfor %}
+  {% for method in type.allSubscripts|!definedInExtension %}
+    {% call givenMockSubscript method %}
+  {% endfor %}
+}
+{% endmacro %}
+
+{% macro thenMockVariable variable %}
+  public var {{ variable.name }}: VerifiableProperty.{% if variable.isMutable %}Writable{% else %}Readable{% endif %}{% call normalizeReturnType variable.typeName %} {
+    verifiable()
+  }
+{% endmacro %}
+
+{% macro thenMockMethod method %}
+  public func {{ method.shortName }}({% call predicatesParameter method %}) -> Verifiable{% call normalizeReturnType method.returnTypeName %} {
+    verifiable({% call parametersOnInvoke method %})
+  }
+  {% if method.parameters.count > 0 %}
+  public func {{ method.shortName }}({% call normalizeParameter method %}) -> Verifiable{% call normalizeReturnType method.returnTypeName %} {
+    verifiable({% call parametersOnInvoke method %})
+  }
+  {% endif %}
+{% endmacro %}
+
+{% macro thenMockSubscript subscript %}
+  public subscript({% for param in subscript.parameters %}{% if param.argumentLabel != null and param.argumentLabel != param.name %}{{ param.argumentLabel }} {% endif %}{{ param.name }}: Predicate<{{ param.unwrappedTypeName if param.typeAttributes.escaping else param.typeName }}>{{ ', ' if not forloop.last }}{% endfor %}) -> VerifiableSubscript.{% if subscript.writeAccess != "" %}Writable{% else %}Readable{% endif %}{% call normalizeReturnType subscript.actualReturnTypeName %} {
+    verifiable({% call parametersOnInvoke method %})
+  }
+  {% if method.parameters.count > 0 %}
+  public subscript({% for param in subscript.parameters %}{% if param.argumentLabel != null and param.argumentLabel != param.name %}{{ param.argumentLabel }} {% endif %}{{ param.name }}: {{ param.typeName }}{{ ', ' if not forloop.last }}{% endfor %}) -> VerifiableSubscript.{% if subscript.writeAccess != "" %}Writable{% else %}Readable{% endif %}{% call normalizeReturnType subscript.actualReturnTypeName %} {
+   verifiable({% call parametersOnInvoke subscript %})
+  }
+  {% endif %}
+{% endmacro %}
+
+{% macro then type %}
+extension Then where WrappedType == {{ type.name }} {
+  {% for variable in type.allVariables|!definedInExtension %}
+    {% call thenMockVariable variable %}
+  {% endfor %}
+  {% for method in type.allMethods|!definedInExtension %}
+    {% call thenMockMethod method %}
+  {% endfor %}
+  {% for method in type.allSubscripts|!definedInExtension %}
+    {% call thenMockSubscript method %}
+  {% endfor %}
+}
+{% endmacro %}
+{% for type in types.protocols where type|annotated:"AutoMockable" %}
+
+// MARK: - {{ type.name }}
+  {% call mock type %}
+
+  {% call given type %}
+
+  {% call then type %}
+{% endfor %}
+
